@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.db
+uploads/
+.streamlit/secrets.toml
+.ngrok_token
+*.zip
