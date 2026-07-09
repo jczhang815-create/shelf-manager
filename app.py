@@ -168,11 +168,21 @@ if page == "📸 扫码入库":
             # ---- 展示结果表格 ----
             st.subheader(f"📋 识别结果（共 {len(results)} 条）")
 
+            # 全选/取消
+            toggle_cols = st.columns(4)
+            if toggle_cols[0].button("☑ 全选", key=f"all_{st.session_state.uploader_key}"):
+                st.session_state[f"select_all_{st.session_state.uploader_key}"] = True
+            if toggle_cols[1].button("☐ 取消全选", key=f"none_{st.session_state.uploader_key}"):
+                st.session_state[f"select_all_{st.session_state.uploader_key}"] = False
+
+            select_all = st.session_state.get(f"select_all_{st.session_state.uploader_key}", True)
+
+            selected_items = []
             edited_codes = []
             for i, r in enumerate(results):
-                c1, c2, c3 = st.columns([1, 2, 1])
+                c1, c2, c3, c4 = st.columns([1, 2, 0.5, 0.8])
                 with c1:
-                    st.image(r["path"], width=120)
+                    st.image(r["path"], width=100)
                 with c2:
                     code = st.text_input(
                         f"编号 #{i+1}",
@@ -182,21 +192,30 @@ if page == "📸 扫码入库":
                     ).strip()
                     edited_codes.append(code)
                 with c3:
+                    checked = st.checkbox(
+                        "入库",
+                        value=select_all and bool(code),
+                        key=f"chk_{st.session_state.uploader_key}_{i}",
+                        label_visibility="collapsed",
+                    )
+                    if checked:
+                        selected_items.append(i)
+                with c4:
                     if r["ok"]:
-                        st.success(f"{r['time']:.1f}s")
+                        st.caption(f"{r['time']:.1f}s")
                     elif not r["code"]:
-                        st.warning("未识别")
+                        st.caption("未识别")
                     else:
-                        st.error("失败")
+                        st.caption("失败")
 
             # ---- 批量入库 ----
             st.divider()
-            valid_codes = [c for c in edited_codes if c]
-            st.write(f"有效编号：**{len(valid_codes)}** / {len(results)} 条")
+            st.write(f"已勾选：**{len(selected_items)}** / {len(results)} 条")
 
             if st.button("✅ 批量入库", type="primary", key=f"batch_save_{st.session_state.uploader_key}"):
                 count = 0
-                for i, code in enumerate(edited_codes):
+                for i in selected_items:
+                    code = edited_codes[i]
                     if code:
                         insert_record(code, loc_info["location"], results[i]["path"])
                         count += 1
