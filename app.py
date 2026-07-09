@@ -137,45 +137,42 @@ if page == "📸 扫码入库":
                     f.flush()
                     os.fsync(f.fileno())
 
-                # AI 识别
+                # AI 识别（支持一图多码）
                 import time
                 t0 = time.time()
                 try:
-                    from vision_ocr import extract_code_by_vision
-                    code = extract_code_by_vision(
+                    from vision_ocr import extract_codes_by_vision
+                    codes = extract_codes_by_vision(
                         saved_path, api_key=api_key,
                         base_url=api_base, model=ai_model,
                     )
                     elapsed = time.time() - t0
                 except Exception as e:
-                    code = None
+                    codes = []
                     elapsed = time.time() - t0
 
-                results.append({
-                    "name": uf.name,
-                    "path": saved_path,
-                    "code": code or "",
-                    "time": elapsed,
-                    "ok": code is not None,
-                })
+                # 一图可能识别到多个编号，每个编号一行
+                for code in (codes if codes else [""]):
+                    results.append({
+                        "name": uf.name,
+                        "path": saved_path,
+                        "code": code.strip(),
+                        "time": elapsed,
+                        "ok": bool(codes),
+                    })
 
                 progress.progress((i + 1) / len(uploaded_files))
 
             progress.empty()
 
             # ---- 展示结果表格 ----
-            st.subheader("📋 识别结果")
+            st.subheader(f"📋 识别结果（共 {len(results)} 条）")
 
             edited_codes = []
-            cols = st.columns([1, 2, 1])
-            cols[0].markdown("**照片**")
-            cols[1].markdown("**编号（可修改）**")
-            cols[2].markdown("**状态**")
-
             for i, r in enumerate(results):
                 c1, c2, c3 = st.columns([1, 2, 1])
                 with c1:
-                    st.image(r["path"], width=150)
+                    st.image(r["path"], width=120)
                 with c2:
                     code = st.text_input(
                         f"编号 #{i+1}",
@@ -187,13 +184,15 @@ if page == "📸 扫码入库":
                 with c3:
                     if r["ok"]:
                         st.success(f"{r['time']:.1f}s")
+                    elif not r["code"]:
+                        st.warning("未识别")
                     else:
                         st.error("失败")
 
             # ---- 批量入库 ----
             st.divider()
             valid_codes = [c for c in edited_codes if c]
-            st.write(f"有效编号：**{len(valid_codes)}** / {len(results)} 个")
+            st.write(f"有效编号：**{len(valid_codes)}** / {len(results)} 条")
 
             if st.button("✅ 批量入库", type="primary", key=f"batch_save_{st.session_state.uploader_key}"):
                 count = 0
