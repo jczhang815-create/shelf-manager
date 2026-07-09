@@ -1,5 +1,5 @@
 """
-SQLite 数据库操作：建表、插入、查询
+SQLite 数据库操作
 """
 
 import sqlite3
@@ -10,60 +10,39 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shelf_manage
 
 
 def get_connection():
-    """获取数据库连接（启用 WAL 模式以支持并发读取）"""
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
 def init_db():
-    """初始化数据库，创建表（如果不存在）"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            material_code TEXT NOT NULL,
+            rh_code TEXT NOT NULL DEFAULT '',
+            sw_code TEXT NOT NULL DEFAULT '',
             location TEXT NOT NULL,
             image_path TEXT NOT NULL,
             create_time TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         )
     """)
-    # 为查询建立索引
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_material_code
-        ON materials(material_code)
-    """)
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_location
-        ON materials(location)
-    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_rh_code ON materials(rh_code)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sw_code ON materials(sw_code)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_location ON materials(location)")
     conn.commit()
     conn.close()
 
 
-def insert_record(material_code: str, location: str, image_path: str) -> int:
-    """
-    插入一条记录，返回新记录的 id。
-    如果同一 material_code + location + image_path 已存在，则跳过（去重）。
-    """
+def insert_record(rh_code: str, sw_code: str, location: str, image_path: str) -> int:
+    """插入一条记录，返回 id"""
     conn = get_connection()
     cursor = conn.cursor()
-
-    # 去重检查
-    cursor.execute(
-        "SELECT id FROM materials WHERE material_code=? AND location=? AND image_path=?",
-        (material_code, location, image_path),
-    )
-    existing = cursor.fetchone()
-    if existing:
-        conn.close()
-        return existing[0]
-
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute(
-        "INSERT INTO materials (material_code, location, image_path, create_time) VALUES (?, ?, ?, ?)",
-        (material_code, location, image_path, now),
+        "INSERT INTO materials (rh_code, sw_code, location, image_path, create_time) VALUES (?, ?, ?, ?, ?)",
+        (rh_code, sw_code, location, image_path, now),
     )
     conn.commit()
     row_id = cursor.lastrowid
@@ -71,62 +50,36 @@ def insert_record(material_code: str, location: str, image_path: str) -> int:
     return row_id
 
 
-def query_by_material_code(material_code: str) -> list[dict]:
-    """
-    根据材料编号查询所有记录（可能出现在多个位置）。
-    返回列表，每条记录为 dict。
-    """
+def query_by_code(code: str) -> list[dict]:
+    """用 RH 或 SW 任一编码查询"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, material_code, location, image_path, create_time "
-        "FROM materials WHERE material_code=? ORDER BY create_time DESC",
-        (material_code,),
+        "SELECT id, rh_code, sw_code, location, image_path, create_time "
+        "FROM materials WHERE rh_code=? OR sw_code=? ORDER BY create_time DESC",
+        (code, code),
     )
     rows = cursor.fetchall()
     conn.close()
-
     return [
-        {
-            "id": r[0],
-            "material_code": r[1],
-            "location": r[2],
-            "image_path": r[3],
-            "create_time": r[4],
-        }
+        {"id": r[0], "rh_code": r[1], "sw_code": r[2],
+         "location": r[3], "image_path": r[4], "create_time": r[5]}
         for r in rows
     ]
 
 
-def get_all_records(limit: int = 100) -> list[dict]:
-    """获取最近的所有记录（用于浏览）"""
+def get_all_records(limit: int = 200) -> list[dict]:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, material_code, location, image_path, create_time "
+        "SELECT id, rh_code, sw_code, location, image_path, create_time "
         "FROM materials ORDER BY create_time DESC LIMIT ?",
         (limit,),
     )
     rows = cursor.fetchall()
     conn.close()
-
     return [
-        {
-            "id": r[0],
-            "material_code": r[1],
-            "location": r[2],
-            "image_path": r[3],
-            "create_time": r[4],
-        }
+        {"id": r[0], "rh_code": r[1], "sw_code": r[2],
+         "location": r[3], "image_path": r[4], "create_time": r[5]}
         for r in rows
     ]
-
-
-def get_locations() -> list[str]:
-    """获取所有已录入的位置列表（去重、排序）"""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT location FROM materials ORDER BY location")
-    rows = cursor.fetchall()
-    conn.close()
-    return [r[0] for r in rows]
