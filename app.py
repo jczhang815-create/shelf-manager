@@ -129,111 +129,107 @@ if page == "📸 扫码入库":
             for uf in ufs:
                 images_to_process.append((uf.name, uf.getbuffer()))
 
-    if images_to_process:
-        if not api_key:
-            st.warning("⚠️ 请在侧边栏填写 API Key")
-        elif not loc_info:
-            st.warning("⚠️ 请先设定货架位置")
+    cache_key = f"ai_result_{st.session_state.uploader_key}"
+
+    # 有新照片时运行 AI
+    if images_to_process and api_key and loc_info:
+        st.subheader(f"📊 共 {len(images_to_process)} 张照片，AI 识别中...")
+        all_codes = []
+        saved_paths = []
+        progress = st.progress(0)
+
+        for i, (name, data) in enumerate(images_to_process):
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            sp = os.path.join(UPLOAD_DIR, f"scan_{ts}_{i}.jpg")
+            with open(sp, "wb") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+            saved_paths.append(sp)
+
+            import time
+            t0 = time.time()
+            try:
+                from vision_ocr import extract_codes_by_vision
+                codes = extract_codes_by_vision(
+                    sp, api_key=api_key, base_url=api_base, model=ai_model,
+                )
+                elapsed = time.time() - t0
+            except Exception:
+                codes = []
+                elapsed = time.time() - t0
+
+            st.caption(f"照片 {i+1}：{elapsed:.1f}s，{len(codes)} 个编号")
+            for code in codes:
+                c = code.strip()
+                if c and c not in all_codes:
+                    all_codes.append(c)
+            progress.progress((i + 1) / len(images_to_process))
+        progress.empty()
+
+        st.session_state[cache_key] = {
+            "all_codes": all_codes,
+            "saved_paths": saved_paths,
+        }
+
+    # 显示缓存的结果（不管有没有新照片）
+    if cache_key in st.session_state:
+        cached = st.session_state[cache_key]
+        all_codes = cached["all_codes"]
+        saved_paths = cached["saved_paths"]
+
+        if not all_codes:
+            st.warning("未识别到任何编号")
         else:
-            # ---- AI 识别（结果缓存在 session state） ----
-            cache_key = f"ai_result_{st.session_state.uploader_key}"
-            if cache_key not in st.session_state:
-                st.subheader(f"📊 共 {len(images_to_process)} 张照片，AI 识别中...")
-                all_codes = []
-                saved_paths = []
-                progress = st.progress(0)
+            st.divider()
+            st.subheader("🏷️ 为每个编号选择类型")
 
-                for i, (name, data) in enumerate(images_to_process):
-                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    sp = os.path.join(UPLOAD_DIR, f"scan_{ts}_{i}.jpg")
-                    with open(sp, "wb") as f:
-                        f.write(data)
-                        f.flush()
-                        os.fsync(f.fileno())
-                    saved_paths.append(sp)
+            for i, code in enumerate(all_codes):
+                c1, c2, c3 = st.columns([2, 0.6, 0.6])
+                with c1:
+                    st.markdown(f"**`{code}`**")
+                with c2:
+                    st.checkbox("RH", key=f"rh_chk_{st.session_state.uploader_key}_{i}",
+                                value=st.session_state.get(f"rh_chk_{st.session_state.uploader_key}_{i}", False))
+                with c3:
+                    st.checkbox("SW", key=f"sw_chk_{st.session_state.uploader_key}_{i}",
+                                value=st.session_state.get(f"sw_chk_{st.session_state.uploader_key}_{i}", False))
 
-                    import time
-                    t0 = time.time()
-                    try:
-                        from vision_ocr import extract_codes_by_vision
-                        codes = extract_codes_by_vision(
-                            sp, api_key=api_key, base_url=api_base, model=ai_model,
-                        )
-                        elapsed = time.time() - t0
-                    except Exception:
-                        codes = []
-                        elapsed = time.time() - t0
+            st.divider()
+            st.subheader("📋 配对预览")
 
-                    st.caption(f"照片 {i+1}：{elapsed:.1f}s，{len(codes)} 个编号")
-                    for code in codes:
-                        c = code.strip()
-                        if c and c not in all_codes:
-                            all_codes.append(c)
-                    progress.progress((i + 1) / len(images_to_process))
-                progress.empty()
+            rh_list = [all_codes[i] for i in range(len(all_codes))
+                       if st.session_state.get(f"rh_chk_{st.session_state.uploader_key}_{i}")]
+            sw_list = [all_codes[i] for i in range(len(all_codes))
+                       if st.session_state.get(f"sw_chk_{st.session_state.uploader_key}_{i}")]
 
-                st.session_state[cache_key] = {
-                    "all_codes": all_codes,
-                    "saved_paths": saved_paths,
-                }
+            max_len = max(len(rh_list), len(sw_list))
+            if max_len == 0:
+                st.info("请至少选择一个 RH 或 SW")
             else:
-                cached = st.session_state[cache_key]
-                all_codes = cached["all_codes"]
-                saved_paths = cached["saved_paths"]
+                for j in range(max_len):
+                    rh_default = rh_list[j] if j < len(rh_list) else ""
+                    sw_default = sw_list[j] if j < len(sw_list) else ""
+                    c1, c2 = st.columns(2)
+                    c1.text_input(f"RH #{j+1}", value=rh_default,
+                                  key=f"rhv_{st.session_state.uploader_key}_{j}")
+                    c2.text_input(f"SW #{j+1}", value=sw_default,
+                                  key=f"swv_{st.session_state.uploader_key}_{j}")
 
-            # ---- 编码分配 ----
-            if not all_codes:
-                st.warning("未识别到任何编号")
-            else:
-                st.divider()
-                st.subheader("🏷️ 为每个编号选择类型")
-
-                for i, code in enumerate(all_codes):
-                    c1, c2, c3 = st.columns([2, 0.6, 0.6])
-                    with c1:
-                        st.markdown(f"**`{code}`**")
-                    with c2:
-                        st.checkbox("RH", key=f"rh_chk_{st.session_state.uploader_key}_{i}", value=False)
-                    with c3:
-                        st.checkbox("SW", key=f"sw_chk_{st.session_state.uploader_key}_{i}", value=False)
-
-                st.divider()
-                st.subheader("📋 配对预览")
-
-                # 读取角色分配
-                rh_list = [all_codes[i] for i in range(len(all_codes))
-                           if st.session_state.get(f"rh_chk_{st.session_state.uploader_key}_{i}")]
-                sw_list = [all_codes[i] for i in range(len(all_codes))
-                           if st.session_state.get(f"sw_chk_{st.session_state.uploader_key}_{i}")]
-
-                max_len = max(len(rh_list), len(sw_list))
-                if max_len == 0:
-                    st.info("请至少选择一个 RH 或 SW")
-                else:
+                if st.button("✅ 批量入库", type="primary", key=f"save_{st.session_state.uploader_key}"):
+                    count = 0
+                    img = saved_paths[0] if saved_paths else ""
                     for j in range(max_len):
-                        rh_default = rh_list[j] if j < len(rh_list) else ""
-                        sw_default = sw_list[j] if j < len(sw_list) else ""
-                        c1, c2 = st.columns(2)
-                        c1.text_input(f"RH #{j+1}", value=rh_default,
-                                      key=f"rhv_{st.session_state.uploader_key}_{j}")
-                        c2.text_input(f"SW #{j+1}", value=sw_default,
-                                      key=f"swv_{st.session_state.uploader_key}_{j}")
-
-                    if st.button("✅ 批量入库", type="primary", key=f"save_{st.session_state.uploader_key}"):
-                        count = 0
-                        img = saved_paths[0] if saved_paths else ""
-                        for j in range(max_len):
-                            final_rh = st.session_state.get(f"rhv_{st.session_state.uploader_key}_{j}", "").strip()
-                            final_sw = st.session_state.get(f"swv_{st.session_state.uploader_key}_{j}", "").strip()
-                            if final_rh or final_sw:
-                                insert_record(final_rh, final_sw, loc_info["location"], img)
-                                count += 1
-                        st.session_state.scan_count += count
-                        st.success(f"✅ 已入库 {count} 条 → {loc_info['location']}")
-                        # 清理缓存
-                        del st.session_state[cache_key]
-                        st.session_state.uploader_key += 1
-                        st.rerun()
+                        final_rh = st.session_state.get(f"rhv_{st.session_state.uploader_key}_{j}", "").strip()
+                        final_sw = st.session_state.get(f"swv_{st.session_state.uploader_key}_{j}", "").strip()
+                        if final_rh or final_sw:
+                            insert_record(final_rh, final_sw, loc_info["location"], img)
+                            count += 1
+                    st.session_state.scan_count += count
+                    st.success(f"✅ 已入库 {count} 条 → {loc_info['location']}")
+                    del st.session_state[cache_key]
+                    st.session_state.uploader_key += 1
+                    st.rerun()
 
 # ============================================================
 # 页面2：🔍 查询材料
