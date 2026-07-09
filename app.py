@@ -189,25 +189,22 @@ if page == "📸 扫码入库":
                 st.subheader("🏷️ 为每个编号选择类型")
 
                 for i, code in enumerate(all_codes):
-                    c1, c2 = st.columns([2, 1])
+                    c1, c2, c3 = st.columns([2, 0.6, 0.6])
                     with c1:
                         st.markdown(f"**`{code}`**")
                     with c2:
-                        role = st.radio(
-                            "类型", ["RH", "SW", "忽略"],
-                            key=f"role_{st.session_state.uploader_key}_{i}",
-                            horizontal=True, index=2,
-                            label_visibility="collapsed",
-                        )
+                        st.checkbox("RH", key=f"rh_chk_{st.session_state.uploader_key}_{i}", value=False)
+                    with c3:
+                        st.checkbox("SW", key=f"sw_chk_{st.session_state.uploader_key}_{i}", value=False)
 
                 st.divider()
                 st.subheader("📋 配对预览")
 
                 # 读取角色分配
                 rh_list = [all_codes[i] for i in range(len(all_codes))
-                           if st.session_state.get(f"role_{st.session_state.uploader_key}_{i}") == "RH"]
+                           if st.session_state.get(f"rh_chk_{st.session_state.uploader_key}_{i}")]
                 sw_list = [all_codes[i] for i in range(len(all_codes))
-                           if st.session_state.get(f"role_{st.session_state.uploader_key}_{i}") == "SW"]
+                           if st.session_state.get(f"sw_chk_{st.session_state.uploader_key}_{i}")]
 
                 max_len = max(len(rh_list), len(sw_list))
                 if max_len == 0:
