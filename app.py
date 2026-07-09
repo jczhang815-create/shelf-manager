@@ -108,32 +108,45 @@ if page == "📸 扫码入库":
 
     st.divider()
 
-    # ---- 批量拍照 ----
-    uploaded_files = st.file_uploader(
-        "📷 选择照片，可多选（手机端可选「拍照」一次一张，再继续添加）",
-        type=["jpg", "jpeg", "png", "bmp", "webp"],
-        accept_multiple_files=True,
-        key=f"scanner_{st.session_state.uploader_key}",
-    )
+    # ---- 拍照（主）+ 相册上传（备） ----
+    tab1, tab2 = st.tabs(["📷 直接拍照（推荐，秒传）", "📁 从相册上传"])
 
-    if uploaded_files:
+    images_to_process = []  # [(filename, bytes), ...]
+
+    with tab1:
+        cam_photo = st.camera_input("点击拍照", key=f"cam_{st.session_state.uploader_key}")
+        if cam_photo is not None:
+            images_to_process.append(("camera.jpg", cam_photo.getvalue()))
+
+    with tab2:
+        uploaded_files = st.file_uploader(
+            "选择照片（可多选）",
+            type=["jpg", "jpeg", "png", "bmp", "webp"],
+            accept_multiple_files=True,
+            key=f"scanner_{st.session_state.uploader_key}",
+        )
+        if uploaded_files:
+            for uf in uploaded_files:
+                images_to_process.append((uf.name, uf.getbuffer()))
+
+    if images_to_process:
         if not api_key:
             st.warning("⚠️ 请在侧边栏填写 API Key")
         elif not loc_info:
             st.warning("⚠️ 请先设定货架位置")
         else:
             # ---- 批量 AI 识别 ----
-            st.subheader(f"📊 共 {len(uploaded_files)} 张照片，AI 识别中...")
+            st.subheader(f"📊 共 {len(images_to_process)} 张照片，AI 识别中...")
 
             results = []
             progress = st.progress(0)
 
-            for i, uf in enumerate(uploaded_files):
+            for i, (name, data) in enumerate(images_to_process):
                 # 保存
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 saved_path = os.path.join(UPLOAD_DIR, f"scan_{ts}_{i}.jpg")
                 with open(saved_path, "wb") as f:
-                    f.write(uf.getbuffer())
+                    f.write(data)
                     f.flush()
                     os.fsync(f.fileno())
 
@@ -154,14 +167,14 @@ if page == "📸 扫码入库":
                 # 一图可能识别到多个编号，每个编号一行
                 for code in (codes if codes else [""]):
                     results.append({
-                        "name": uf.name,
+                        "name": name,
                         "path": saved_path,
                         "code": code.strip(),
                         "time": elapsed,
                         "ok": bool(codes),
                     })
 
-                progress.progress((i + 1) / len(uploaded_files))
+                progress.progress((i + 1) / len(images_to_process))
 
             progress.empty()
 
