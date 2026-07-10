@@ -55,15 +55,18 @@ page = st.sidebar.radio("导航", ["📸 扫码入库", "🔍 查询材料", "�
 st.sidebar.divider()
 st.sidebar.subheader("🤖 AI 设置")
 
-default_key = os.getenv("SHELF_MANAGER_API_KEY", "")
+default_key = os.getenv("SHELF_MANAGER_API_KEY", "sk-xtxfhovabfbicmrmcibbtifgeszwmfmypfzbupvtnjzmngnk")
 try:
     default_key = st.secrets.get("API_KEY", default_key)
 except Exception:
     pass
 
+if "api_key" not in st.session_state or not st.session_state["api_key"]:
+    st.session_state["api_key"] = default_key
+
 api_key = st.sidebar.text_input(
     "API Key", type="password",
-    value=st.session_state.get("api_key") or default_key,
+    value=st.session_state["api_key"],
     placeholder="sk-...",
 )
 if api_key:
