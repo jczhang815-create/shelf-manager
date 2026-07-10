@@ -5,6 +5,7 @@ SQLite 数据库操作
 import sqlite3
 import os
 from datetime import datetime
+from utils import normalize_material_code
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shelf_manager.db")
 
@@ -31,27 +32,59 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_rh_code ON materials(rh_code)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sw_code ON materials(sw_code)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_location ON materials(location)")
+    cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_materials_rh_code "
+        "ON materials(rh_code) WHERE rh_code <> ''"
+    )
+    cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_materials_sw_code "
+        "ON materials(sw_code) WHERE sw_code <> ''"
+    )
     conn.commit()
     conn.close()
 
 
 def insert_record(rh_code: str, sw_code: str, location: str, image_path: str) -> int:
-    """插入一条记录，返回 id"""
+    """插入或更新一条记录，返回 id。已有 RH/SW 编码时更新位置和图片。"""
+    rh_code = normalize_material_code(rh_code)
+    sw_code = normalize_material_code(sw_code)
+    location = location.strip().upper()
+
     conn = get_connection()
     cursor = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute(
-        "INSERT INTO materials (rh_code, sw_code, location, image_path, create_time) VALUES (?, ?, ?, ?, ?)",
-        (rh_code, sw_code, location, image_path, now),
-    )
+
+    existing_id = None
+    if rh_code:
+        cursor.execute("SELECT id FROM materials WHERE rh_code=? LIMIT 1", (rh_code,))
+        row = cursor.fetchone()
+        existing_id = row[0] if row else None
+    if existing_id is None and sw_code:
+        cursor.execute("SELECT id FROM materials WHERE sw_code=? LIMIT 1", (sw_code,))
+        row = cursor.fetchone()
+        existing_id = row[0] if row else None
+
+    if existing_id is not None:
+        cursor.execute(
+            "UPDATE materials SET rh_code=?, sw_code=?, location=?, image_path=?, create_time=? WHERE id=?",
+            (rh_code, sw_code, location, image_path, now, existing_id),
+        )
+        row_id = existing_id
+    else:
+        cursor.execute(
+            "INSERT INTO materials (rh_code, sw_code, location, image_path, create_time) VALUES (?, ?, ?, ?, ?)",
+            (rh_code, sw_code, location, image_path, now),
+        )
+        row_id = cursor.lastrowid
+
     conn.commit()
-    row_id = cursor.lastrowid
     conn.close()
     return row_id
 
 
 def query_by_code(code: str) -> list[dict]:
     """用 RH 或 SW 任一编码查询"""
+    code = normalize_material_code(code)
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(

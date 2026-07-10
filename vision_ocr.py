@@ -4,8 +4,10 @@ AI 视觉识别：调用大模型从照片中提取材料编号
 
 import base64
 import io
+import re
 from PIL import Image
 from openai import OpenAI
+from utils import is_valid_material_code, normalize_material_code
 
 AI_MAX_SIZE = 1200
 AI_JPEG_QUALITY = 80
@@ -72,16 +74,18 @@ def extract_codes_by_vision(
         if not result or result.upper() == "NONE":
             return []
 
-        # 按换行拆分，过滤空行和 NONE
         codes = []
-        for line in result.split("\n"):
-            code = line.strip()
-            if code and code.upper() != "NONE":
+        seen = set()
+        for line in result.splitlines():
+            code = normalize_material_code(line)
+            code = re.sub(r"^[^A-Z0-9]+|[^A-Z0-9]+$", "", code)
+            if code and code.upper() != "NONE" and is_valid_material_code(code) and code not in seen:
+                seen.add(code)
                 codes.append(code)
         return codes
 
     except Exception as e:
-        raise e
+        raise RuntimeError(f"AI vision recognition failed: {e}") from e
 
 
 def extract_code_by_vision(
